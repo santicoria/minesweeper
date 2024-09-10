@@ -5,8 +5,9 @@ import threading
 import pickle
 import asyncio
 import argparse
+import queue
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, scrolledtext
 from multiprocessing import Queue, Process
 import pyfiglet
 from rich import print
@@ -323,6 +324,67 @@ class MinesweeperGUI:
                     if(board.board[i][n][4]):
                         self.buttons[n][i].config(text=board.board[i][n][3])
         board.print_board(board.board)
+
+
+class ChatClientApp:
+    def __init__(self, host, port, root, user):
+        self.root = root
+        self.root.title("Cliente de Chat")
+        self.host = host
+        self.port = port
+        self.chat_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, state='disabled', width=50, height=15)
+        self.chat_area.pack(padx=10, pady=10)
+        self.chat_area.tag_config('left', justify='left')
+        self.chat_area.tag_config('right', justify='right')
+        self.entry_message = tk.Entry(self.root, width=40)
+        self.entry_message.pack(padx=10, pady=5, side=tk.LEFT)
+        self.send_button = tk.Button(self.root, text="Enviar", command=self.send_message)
+        self.send_button.pack(padx=10, pady=5, side=tk.LEFT)
+        self.reader = None
+        self.writer = None
+        self.message_queue = queue.Queue()
+        self.user = user
+        
+        threading.Thread(target=self.start_asyncio_loop, daemon=True).start()
+
+        self.root.after(100, self.check_new_messages)
+
+    def start_asyncio_loop(self):
+        asyncio.run(self.connect_to_server())
+
+    async def connect_to_server(self):
+        self.reader, self.writer = await asyncio.open_connection(self.host, int(self.port)+1)
+        await self.receive_message()
+
+    async def receive_message(self):
+        while True:
+            data = await self.reader.read(100)
+            if not data:
+                break
+            message = data.decode().strip()
+            self.message_queue.put(message)
+
+    def check_new_messages(self):
+        while not self.message_queue.empty():
+            message = self.message_queue.get()
+            self.chat_area.config(state='normal')
+            self.chat_area.insert(tk.END, f"{message}\n")
+            self.chat_area.yview(tk.END)
+            self.chat_area.config(state='disabled')
+
+        self.root.after(100, self.check_new_messages)
+
+    def send_message(self):
+        message = self.entry_message.get()
+        self.chat_area.config(state='normal')
+        self.chat_area.insert(tk.END, f"Tu:\n{message}\n", 'right')
+        self.chat_area.yview(tk.END)
+        self.chat_area.config(state='disabled')
+        if message and self.writer:
+            full_message = f"{self.user}:\n{message}"
+            self.writer.write(full_message.encode())
+            asyncio.run_coroutine_threadsafe(self.writer.drain(), asyncio.get_event_loop())
+            self.entry_message.delete(0, tk.END)
         
 
 async def run_server(host, port, difficulty):
@@ -332,26 +394,83 @@ async def run_server(host, port, difficulty):
     print(f"Server running at {host}:{port}")
     await asyncio.sleep(5) 
 
+connected_clients = []
+async def handle_client_chat(reader, writer):
+    address = writer.get_extra_info('peername')
+    print(f"Cliente conectado: {address}")
+    connected_clients.append(writer)
+
+    try:
+        while True:
+            data = await reader.read(100)
+            if not data:
+                break
+
+            message = data.decode().strip()
+            print(f"Mensaje de {address}: {message}")
+            print(len(connected_clients))
+
+            for client in connected_clients:
+                if client != writer:
+                    client.write(f"{message}\n".encode())
+                    await client.drain()
+
+    except ConnectionResetError:
+        print(f"Cliente desconectado: {address}")
+
+    finally:
+        connected_clients.remove(writer)
+        writer.close()
+        await writer.wait_closed()
+
+# async def send_message(writer):
+#     while True:
+#         message = input("Escribe el mensaje: ")
+#         writer.write(message.encode())
+#         await writer.drain()
+
+# async def receive_message(reader):
+#     while True:
+#         data = await reader.read(100)
+#         if not data:
+#             print("Servidor desconectado.")
+#             break
+#         print(data.decode().strip())
+
+async def chat_main(host, port):
+    server = await asyncio.start_server(handle_client_chat, host, (int(port)+1))
+    print("Servidor de chat iniciado en " + host + ":" + str(int(port)+1))
+
+    async with server:
+        await server.serve_forever()
+    
+    # reader, writer = await asyncio.open_connection('127.0.0.1', (int(port)+1))
+
+    # send_task = asyncio.create_task(send_message(writer))
+    # receive_task = asyncio.create_task(receive_message(reader))
+
+    # await asyncio.gather(send_task, receive_task)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Minesweeper Game Server/Client")
-    parser.add_argument('--mode', choices=['server', 'client'], required=True, help="Run as server or client")
-    parser.add_argument('--host', type=str, default='127.0.0.1', help="Server IP address")
-    parser.add_argument('--port', type=int, default=5555, help="Server port")
-    parser.add_argument('--difficulty', type=int, choices=[0, 1, 2], default=0, help="Game difficulty (0: Easy, 1: Medium, 2: Hard)")
+    parser.add_argument('--mode', choices=['server', 'client'], required=True, help="Correr como servidor o cliente")
+    parser.add_argument('--host', type=str, default='127.0.0.1', help="Direccion IP del servidor")
+    parser.add_argument('--port', type=int, default=5555, help="Puerto del servidor")
+    parser.add_argument('--difficulty', type=int, choices=[0, 1, 2], default=0, help="Dificultad de juego (0: Facil, 1: Medio, 2: Dificil)")
+    parser.add_argument('--user', type=str, default='user', help="Tu nombre de usuario")
     return parser.parse_args()
 
-def gui_main(size):
-    root = tk.Tk()
-    app = MinesweeperGUI(root, size)
-    root.mainloop()
 
 if __name__ == "__main__":
     args = parse_arguments()
 
     if args.mode == 'server':
         asyncio.run(run_server(args.host, args.port, args.difficulty))
+        asyncio.run(chat_main(args.host, args.port))
     elif args.mode == 'client':
+        chat_root = tk.Tk()
         root = tk.Tk()
         app = MinesweeperGUI(args.host, args.port, root)
+        chat_app = ChatClientApp(args.host, args.port, chat_root, args.user)
         root.mainloop()
+        chat_root.mainloop()
