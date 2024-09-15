@@ -320,7 +320,7 @@ class MinesweeperGUI:
             self.size = board.size_set
     
     def display_board(self, board):
-        print(board.board)
+        # print(board.board)
         if(board.go == True):
             self.go = True
             title = pyfiglet.figlet_format('GAME OVER', font='cosmic')
