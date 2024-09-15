@@ -135,14 +135,18 @@ class FullClear():
 
 
 class GameServer:
-    def __init__(self, host, port, difficulty):
+    def __init__(self, host, port, ipv, difficulty):
         self.host = host
         self.port = port
+        self.ipv = ipv
         self.difficulty = difficulty
         self.clients = {}
         self.board = Board(self.size_set())
         self.mine_list = self.mine_builder()
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if(self.ipv == 6):
+            self.server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        elif (self.ipv == 4):
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def mines_set(self):
         if (self.difficulty == 0):
@@ -275,10 +279,15 @@ class GameServer:
 
 
 class MinesweeperGUI:
-    def __init__(self, host, port, master):
+    def __init__(self, host, ipv, port, master):
         self.host = host
         self.port = port
-        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.ipv = ipv
+        if(self.ipv == 6):
+            self.client_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        elif(self.ipv == 4):
+            self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
         self.client_socket.connect((self.host, self.port))
         self.go = False
         self.buttons = []
@@ -327,10 +336,11 @@ class MinesweeperGUI:
 
 
 class ChatClientApp:
-    def __init__(self, host, port, root, user):
+    def __init__(self, host, port, ipv, root, user):
         self.root = root
         self.root.title("Cliente de Chat")
         self.host = host
+        self.ipv = ipv
         self.port = port
         self.chat_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, state='disabled', width=50, height=15)
         self.chat_area.pack(padx=10, pady=10)
@@ -353,7 +363,10 @@ class ChatClientApp:
         asyncio.run(self.connect_to_server())
 
     async def connect_to_server(self):
-        self.reader, self.writer = await asyncio.open_connection(self.host, int(self.port)+1)
+        if(self.ipv == 6):
+            self.reader, self.writer = await asyncio.open_connection(self.host, int(self.port)+1, family=socket.AF_INET6)
+        elif(self.ipv == 4):
+            self.reader, self.writer = await asyncio.open_connection(self.host, int(self.port)+1)
         await self.receive_message()
 
     async def receive_message(self):
@@ -387,8 +400,8 @@ class ChatClientApp:
             self.entry_message.delete(0, tk.END)
         
 
-async def run_server(host, port, difficulty):
-    server = GameServer(host, port, difficulty)
+async def run_server(host, port, difficulty, ipv):
+    server = GameServer(host, port, ipv, difficulty)
     server_process = Process(target=server.start)
     server_process.start()
     print(f"Server running at {host}:{port}")
@@ -423,8 +436,13 @@ async def handle_client_chat(reader, writer):
         writer.close()
         await writer.wait_closed()
 
-async def chat_main(host, port):
-    server = await asyncio.start_server(handle_client_chat, host, (int(port)+1))
+
+async def chat_main(host, ipv, port):
+    if (ipv == 6):
+        server = await asyncio.start_server(handle_client_chat, host, (int(port)+1), family=socket.AF_INET6)
+    elif (ipv == 4):
+        server = await asyncio.start_server(handle_client_chat, host, (int(port)+1))
+    
     print("Servidor de chat iniciado en " + host + ":" + str(int(port)+1))
 
     async with server:
@@ -434,6 +452,7 @@ async def chat_main(host, port):
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Minesweeper Game Server/Client")
     parser.add_argument('--mode', choices=['server', 'client'], required=True, help="Correr como servidor o cliente")
+    parser.add_argument('--ipv', type=int, choices=[4, 6], default=0, help="Version de IP (4 o 6)")
     parser.add_argument('--host', type=str, default='127.0.0.1', help="Direccion IP del servidor")
     parser.add_argument('--port', type=int, default=5555, help="Puerto del servidor")
     parser.add_argument('--difficulty', type=int, choices=[0, 1, 2], default=0, help="Dificultad de juego (0: Facil, 1: Medio, 2: Dificil)")
@@ -445,12 +464,12 @@ if __name__ == "__main__":
     args = parse_arguments()
 
     if args.mode == 'server':
-        asyncio.run(run_server(args.host, args.port, args.difficulty))
-        asyncio.run(chat_main(args.host, args.port))
+        asyncio.run(run_server(args.host, args.port, args.difficulty, args.ipv))
+        asyncio.run(chat_main(args.host, args.ipv, args.port))
     elif args.mode == 'client':
         chat_root = tk.Tk()
         root = tk.Tk()
-        app = MinesweeperGUI(args.host, args.port, root)
-        chat_app = ChatClientApp(args.host, args.port, chat_root, args.user)
+        app = MinesweeperGUI(args.host, args.ipv, args.port, root)
+        chat_app = ChatClientApp(args.host, args.port, args.ipv, chat_root, args.user)
         root.mainloop()
         chat_root.mainloop()
