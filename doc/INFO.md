@@ -13,6 +13,9 @@ Arquitectura general de la aplicacion:
 
 Distribucion de procesos e hilos:
 
+    - Servidor de chat:
+            El servidor del chat es un servidor independiente que corre de forma asincrona al GameServer. Este permite manejar multiples conexiones sin interferir con las operaciones de I/O del GameServer
+
     -Procesos:
         - GameServer:
             El servidor principal del juego corre como un prceso separado. Este maneja:
@@ -21,8 +24,6 @@ Distribucion de procesos e hilos:
                 - Responde a los request de los usuarios (como chequear minas o actualizar el estado del juego)
             Correr este proceso de forma independiente permite tener la logica de juego separada del chat y la GUI del cliente
         
-        - Servidor de chat:
-            El servidor del chat es un servidor independiente que corre de forma asincrona al GameServer. Este permite manejar multiples conexiones sin interferir con las operaciones de I/O del GameServer
     
     -Hilos:
         - GUI:
@@ -46,8 +47,13 @@ Distribucion de procesos e hilos:
         - Comunicacion entre el servidor de cliente y el servidor de juego:
             - Se utiliza un socket TCP que permite conexiones IPv4 e IPv6
 
+        - Comunicacion entre el servidor cliente y el chat:
+            - El servidor del chat se mantiene a la escucha de mensajes desde los cientes. Cuando sel servidor de chat
+            recibe un mensaje, este se encarga de hacer un broadcast a todos los clientes conectados
+
+    - ITC:
+        - Networking a GUI (Tkinter):
+            - Se comunican utilizando una cola
+            - Tkinter refresca la cola de forma periodica mientras espera algun mensaje o orden de actualizar la GUI
 
 
-
-
-    
